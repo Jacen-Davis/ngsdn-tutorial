@@ -119,6 +119,15 @@ p4-build: p4src/main.p4
 		p4src/main.p4
 	@echo "*** P4 program compiled successfully! Output files are in p4src/build"
 
+p4-build-switch1: p4src/switch1.p4
+	$(info *** Building P4 program...)
+	@mkdir -p p4src/build
+	docker run --rm -v ${curr_dir}:/workdir -w /workdir ${P4C_IMG} \
+		p4c-bm2-ss --arch v1model -o p4src/build/bmv2.json \
+		--p4runtime-files p4src/build/p4info.txt --Wdisable=unsupported \
+		p4src/switch1.p4
+	@echo "*** P4 program compiled successfully! Output files are in p4src/build"
+
 p4-test:
 	@cd ptf && PTF_DOCKER_IMG=$(STRATUM_BMV2_IMG) ./run_tests $(TEST)
 

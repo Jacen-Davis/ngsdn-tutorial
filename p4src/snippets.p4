@@ -20,6 +20,24 @@ action ndp_ns_to_na(mac_addr_t target_mac) {
     standard_metadata.egress_spec = standard_metadata.ingress_port;
 }
 
+action arp_req_to_reply(mac_addr_t target_mac) {
+    mac_addr_t sender_mac_tmp = hdr.ethernet.src_addr;
+    
+    hdr.ethernet.dst_addr = hdr.ethernet.src_addr;
+    hdr.ethernet.src_addr = target_mac;
+    
+    hdr.arp.operation = ARP_OPCODE_RPY;
+    hdr.arp.sender_hw_addr = target_mac;
+
+    ipv4_addr_t sender_addr_tmp = hdr.arp.sender_proto_addr;
+    hdr.arp.sender_proto_addr = hdr.arp.target_proto_addr;
+
+    hdr.arp.target_hw_addr = sender_mac_tmp;
+    hdr.arp.target_proto_addr = sender_addr_tmp;
+
+    standard_metadata.egress_port = standard_metadata.ingress_port
+}
+
 // ECMP action selector definition:
 action_selector(HashAlgorithm.crc16, 32w1024, 32w16) ecmp_selector;
 

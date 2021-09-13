@@ -109,10 +109,10 @@ class SimpleTopo(Topo):
                            ip='172.16.1.3/24', gw='172.16.1.254')
         h1d = self.addHost('h1d', cls=IPv4Host, mac="00:00:00:00:00:20",
                            ip='172.16.1.4/24', gw='172.16.2.254')
-        self.addLink(h1a, switch1)  # port 3
-        self.addLink(h1b, switch1)  # port 4
-        self.addLink(h1c, switch1)  # port 5
-        self.addLink(h1d, switch1)  # port 6
+        self.addLink(h1a, switch1)  # port 1
+        self.addLink(h1b, switch1)  # port 2
+        self.addLink(h1c, switch1)  # port 3
+        self.addLink(h1d, switch1)  # port 4
 
 
 def main():

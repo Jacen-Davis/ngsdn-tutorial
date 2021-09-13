@@ -54,9 +54,9 @@ const bit<8> IP_PROTO_ICMPV6 = 58;
 
 const bit<16> ARP_HTYPE_ETHR = 1;
 const bit<16> ARP_PTYPE_IPV4 = ETHERTYPE_IPV4;
-const bit<16> ARP_PTYPE_IPV6 = ETHERTYPE_IPV6
-const bit<8>  ARP_OPCODE_REQ = 1;
-const bit<8>  ARP_OPCODE_RPY = 2;
+const bit<16> ARP_PTYPE_IPV6 = ETHERTYPE_IPV6;
+const bit<16>  ARP_OPCODE_REQ = 1;
+const bit<16>  ARP_OPCODE_RPY = 2;
 
 const mac_addr_t IPV6_MCAST_01 = 0x33_33_00_00_00_01;
 
@@ -106,7 +106,7 @@ header ipv6_t {
     bit<128>  src_addr;
     bit<128>  dst_addr;
 }
-
+/*
 header srv6h_t {
     bit<8>   next_hdr;
     bit<8>   hdr_ext_len;
@@ -116,7 +116,7 @@ header srv6h_t {
     bit<8>   flags;
     bit<16>  tag;
 }
-
+*/
 header arp_t {
     bit<16>  hw_type;
     bit<16>  proto_type;
@@ -128,11 +128,11 @@ header arp_t {
     bit<48>  target_hw_addr;
     bit<32>  target_proto_addr;
 }
-
+/*
 header srv6_list_t {
     bit<128>  segment_id;
 }
-
+*/
 header tcp_t {
     bit<16>  src_port;
     bit<16>  dst_port;
@@ -205,8 +205,8 @@ struct parsed_headers_t {
     ipv4_t ipv4;
     arp_t arp;
     ipv6_t ipv6;
-    srv6h_t srv6h;
-    srv6_list_t[SRV6_MAX_HOPS] srv6_list;
+    //srv6h_t srv6h;
+    //srv6_list_t[SRV6_MAX_HOPS] srv6_list;
     tcp_t tcp;
     udp_t udp;
     icmp_t icmp;
@@ -273,7 +273,7 @@ parser ParserImpl (packet_in packet,
             IP_PROTO_TCP: parse_tcp;
             IP_PROTO_UDP: parse_udp;
             IP_PROTO_ICMPV6: parse_icmpv6;
-            IP_PROTO_SRV6: parse_srv6;
+            //IP_PROTO_SRV6: parse_srv6;
             default: accept;
         }
     }
@@ -317,7 +317,7 @@ parser ParserImpl (packet_in packet,
         packet.extract(hdr.ndp);
         transition accept;
     }
-
+    /*
     state parse_srv6 {
         packet.extract(hdr.srv6h);
         transition parse_srv6_list;
@@ -355,6 +355,7 @@ parser ParserImpl (packet_in packet,
             default: accept;
         }
     }
+    */
 }
 
 
@@ -416,6 +417,14 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
             set_egress_port;
             @defaultonly drop;
         }
+        /*
+        // NOTE: const entries are for testing only. Will work on insertion of entires through controller later.
+        const entries = { /* MATCH : ACTION
+            0x00_00_00_00_00_1a : set_egress_port(2);
+            0x00_00_00_00_00_1b : set_egress_port(3);
+            0x00_00_00_00_00_1c : set_egress_port(4);
+            0x00_00_00_00_00_20 : set_egress_port(5);
+        }*/
         const default_action = drop;
         // The @name annotation is used here to provide a name to this table
         // counter, as it will be needed by the compiler to generate the
@@ -448,7 +457,44 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
         counters = direct_counter(CounterType.packets_and_bytes);
     }
 
+    action arp_req_to_reply(mac_addr_t target_mac) {
+        mac_addr_t sender_mac_tmp = hdr.ethernet.src_addr;
 
+        hdr.ethernet.dst_addr = hdr.ethernet.src_addr;
+        hdr.ethernet.src_addr = target_mac;
+
+        hdr.arp.operation = ARP_OPCODE_RPY;
+        hdr.arp.sender_hw_addr = target_mac;
+
+        ipv4_addr_t sender_addr_tmp = hdr.arp.sender_proto_addr;
+        hdr.arp.sender_proto_addr = hdr.arp.target_proto_addr;
+
+        hdr.arp.target_hw_addr = sender_mac_tmp;
+        hdr.arp.target_proto_addr = sender_addr_tmp;
+
+        standard_metadata.egress_port = standard_metadata.ingress_port;
+    }
+
+    table arp_table {
+        key = {
+            hdr.arp.target_proto_addr: exact;
+        }
+        actions = {
+            arp_req_to_reply;
+            @defaultonly drop;
+        }
+        /*
+        const entries = {  MATCH : ACTION 
+            0xAC_10_01_01 : arp_req_to_reply(0x00_00_00_00_00_1a); 
+            0xAC_10_01_02 : arp_req_to_reply(0x00_00_00_00_00_1b); 
+            0xAC_10_01_03 : arp_req_to_reply(0x00_00_00_00_00_1c); 
+            0xAC_10_01_04 : arp_req_to_reply(0x00_00_00_00_00_20); 
+        } 
+        */
+        const default_action = drop;
+        @name("arp_table_counter")
+        counters = direct_counter(CounterType.packets_and_bytes);
+    }
     // *** TODO EXERCISE 5 (IPV6 ROUTING)
     //
     // 1. Create a table to to handle NDP messages to resolve the MAC address of
@@ -540,6 +586,11 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
             // unset the "do_l3_l2" flag to skip the L3 and L2 tables, as the
             // "ndp_ns_to_na" action already set an egress port.
         }
+        
+        if (hdr.ethernet.ether_type == ETHERTYPE_ARP) {
+            do_l3_l2 = false; // unset flag, skip l3 and l2 tables.
+            arp_table.apply();
+        }
 
         if (do_l3_l2) {
 
@@ -630,12 +681,13 @@ control DeparserImpl(packet_out packet, in parsed_headers_t hdr) {
         packet.emit(hdr.ethernet);
         packet.emit(hdr.ipv4);
         packet.emit(hdr.ipv6);
-        packet.emit(hdr.srv6h);
-        packet.emit(hdr.srv6_list);
+        //packet.emit(hdr.srv6h);
+        //packet.emit(hdr.srv6_list);
         packet.emit(hdr.tcp);
         packet.emit(hdr.udp);
         packet.emit(hdr.icmp);
         packet.emit(hdr.icmpv6);
+        packet.emit(hdr.arp);
         packet.emit(hdr.ndp);
     }
 }
